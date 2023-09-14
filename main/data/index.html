@@ -1,0 +1,163 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM" crossorigin="anonymous">
+  <style>
+    .switch input {
+      display: none;
+    }
+
+    .switch  {
+      display: inline-block;
+      width: 60px; /*=w*/
+      height: 30px; /*=h*/
+      margin: 4px;
+      transform: translateY(50%%);
+      position: relative;
+    }
+
+    .slider {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      border-radius: 30px;
+      box-shadow: 0 0 0 2px #777, 0 0 4px #777;
+      cursor: pointer;
+      border: 4px solid transparent;
+      overflow: hidden;
+      transition: 0.2s;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      width: 100%%;
+      height: 100%%;
+      background-color: #777;
+      border-radius: 30px;
+      transform: translateX(-30px); /*translateX(-(w-h))*/
+      transition: 0.2s;
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(30px); /*translateX(w-h)*/
+      background-color: limeGreen;
+    }
+
+    input:checked + .slider {
+      box-shadow: 0 0 0 2px limeGreen, 0 0 8px limeGreen;
+    }
+
+    #relay2Section {
+      display: none;
+    }
+  </style>
+</head>
+<body class="container">
+  <nav class="navbar navbar-expand-lg bg-body-tertiary">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="index.html">Smart Plug</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+          <li class="nav-item">
+            <a class="nav-link" href="settings.html">Settings</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <div class="">
+    <h1 id="deviceName">%DEVICE_NAME%</h1>
+    <span><i>Device time: <span id="deviceTime"></span></i></span>
+    <div>
+      <label>
+        <span id="relay1Name"></span>
+        <div class="switch">
+          <input type="checkbox" id="relay1onoff" />
+          <span class="slider"></span>
+        </div>
+      </label>
+    </div>
+
+    <div id="relay2Section">
+      <label>
+        <span id="relay2Name"></span>
+        <div class="switch">
+          <input type="checkbox" id="relay2onoff" />
+          <span class="slider"></span>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>
+  <script>
+    let currentSettings = %START_SETTINGS%;
+    
+    const deviceName = document.getElementById("deviceName");
+    const relay1Name = document.getElementById("relay1Name");
+    const relay1onoff = document.getElementById("relay1onoff");
+    const relay2Section = document.getElementById("relay2Section");
+    const relay2Name = document.getElementById("relay2Name");
+    const relay2onoff = document.getElementById("relay2onoff");
+    const deviceTime = document.getElementById("deviceTime");
+
+    updateDisplayFields();
+
+    relay1onoff.addEventListener('change', async (event) => {
+      let state = event.currentTarget.checked ? 1 : 0;
+      await setRelayState(state, 1);
+    });
+
+    relay2onoff.addEventListener('change', async (event) => {
+      let state = event.currentTarget.checked ? 1 : 0;
+      await setRelayState(state, 2);
+    });
+
+    async function setRelayState(state, relayNumber) {
+      const saveRequest = await fetch("/api/togglerelay", {
+        method: "POST",
+        contentType: "application/json",
+        body: JSON.stringify({
+          relay: relayNumber,
+          state: state
+        })
+      });
+    }
+
+    // refresh state every 5 seconds
+    setInterval(async () => {
+      await loadData();
+    }, 5000);
+
+    async function loadData() {
+      const request = await fetch("/api/currentsettings");
+      currentSettings = await request.json();
+
+      updateDisplayFields();
+    }
+
+    function updateDisplayFields() {
+      deviceName.innerHTML = currentSettings.devicename;
+      deviceTime.innerHTML = currentSettings.deviceTime;
+
+      relay1Name.innerText = currentSettings.relay1Name;
+      relay1onoff.checked = parseInt(currentSettings.relay1State);
+
+      relay2Section.style.display = parseInt(currentSettings.hasSecondRelay) ? "flex" : "none";
+      if (currentSettings.hasSecondRelay) {
+        relay2Name.innerText = currentSettings.relay2Name;
+        relay2onoff.checked = parseInt(currentSettings.relay2State);
+      }
+    }
+  </script>
+</body>
+</html>
