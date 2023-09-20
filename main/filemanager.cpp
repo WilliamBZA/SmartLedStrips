@@ -1,6 +1,9 @@
 #include <FS.h>
-#include <SPIFFS.h>
 #include "filemanager.h"
+
+#if defined(ESP32)
+#include <SPIFFS.h>
+#endif
 
 FileManager::FileManager() {
   SPIFFS.begin();

@@ -1,15 +1,28 @@
-#include <WiFi.h>
+// #include <WiFi.h>
 #include <WiFiManager.h>
-#include <AsyncTCP.h>
+#define WEBSERVER_H
 #include <ESPAsyncWebServer.h>
 #include <ArduinoOTA.h>
 #include <FS.h>
-#include <SPIFFS.h>
 #include <ArduinoJson.h>
 #include <AsyncJson.h>
-#include <ESPmDNS.h>
 #include "time.h"
 #include "Timer.h"
+
+#include <WS2812FX.h>
+#define LED_COUNT 150
+#define LED_PIN 14
+
+#if defined(ESP8266)
+#include <ESP8266mDNS.h>
+#endif
+
+#if defined(ESP32)
+#include <SPIFFS.h>
+#include <ESPmDNS.h>
+#endif
+
+WS2812FX ws2812fx = WS2812FX(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 7200;
@@ -19,19 +32,21 @@ AsyncWebServer server(80);
 
 String deviceName = "UnknownDevice";
 
+int brightness = 100;
+int colour = 0xFFFFFF;
+
 void connectToWifi() {
   wifiManager.autoConnect("smartlights");
 
-  WiFi.mode(WIFI_STA);
   Serial.println("\nConnecting to WiFi Network ..");
- 
-  while(WiFi.status() != WL_CONNECTED){
-      Serial.print(".");
-      delay(100);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(100);
   }
- 
+
   Serial.println("\nConnected to the WiFi network");
-  Serial.print("Local ESP32 IP: ");
+  Serial.print("Local IP: ");
   Serial.println(WiFi.localIP());
 }
 
@@ -84,7 +99,7 @@ String getSettings() {
 
 String valueProcessor(const String& var) {
   Serial.print("Var: "); Serial.println(var);
-  
+
   if (var == "DEVICE_NAME") {
     return deviceName;
   }
@@ -99,7 +114,7 @@ String valueProcessor(const String& var) {
 void configureUrlRoutes() {
   server.serveStatic("/", SPIFFS, "").setTemplateProcessor(valueProcessor).setDefaultFile("index.html");
 
-  server.on("/api/resetsettings", HTTP_GET, [](AsyncWebServerRequest *request) {
+  server.on("/api/resetsettings", HTTP_GET, [](AsyncWebServerRequest * request) {
     Serial.print("Resetting settings..."); Serial.println("");
     wifiManager.resetSettings();
 
@@ -108,29 +123,88 @@ void configureUrlRoutes() {
     ESP.restart();
   });
 
-  server.on("/api/currentsettings", HTTP_GET, [](AsyncWebServerRequest *request) {
+  server.on("/api/currentsettings", HTTP_GET, [](AsyncWebServerRequest * request) {
     Serial.print("Sending settings..."); Serial.println("");
     request->send(200, "text/json", getSettings());
   });
-  
-  server.onRequestBody([](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+
+  server.onRequestBody([](AsyncWebServerRequest * request, uint8_t *data, size_t len, size_t index, size_t total) {
     Serial.printf("[REQUEST]\t%s\r\n", (const char*)data);
     Serial.print("URL: "); Serial.println(request->url());
-    
+
     if (request->url() == "/api/savesettings") {
       saveSettings(request, data);
       request->send(200, "text/json", "OK");
 
       delay(500);
       ESP.restart();
+    } else if (request->url() == "/api/setcolour") {
+      setColour(request, data);
+      request->send(200, "text/json", "OK");
     } else {
       request->send(404);
     }
   });
 
-  server.onNotFound([](AsyncWebServerRequest *request){
+  server.onFileUpload(onUpload);
+
+  server.onNotFound([](AsyncWebServerRequest *request) {
     request->send(404);
   });
+}
+
+// Upload files by using curl:
+// curl -F 'data=@index.html' http://192.168.88.36/api/upload
+void onUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+  if (request->url() == "/api/upload") {
+    static unsigned long startTimer;
+    if (!index) {
+      startTimer = millis();
+      request->_tempFile = SPIFFS.open("/" + filename, "w");
+      const char* FILESIZE_HEADER{"FileSize"};
+  
+      Serial.printf("UPLOAD: Receiving: '%s'\n", filename.c_str());
+    }
+  
+    if (len) {
+      request->_tempFile.write(data, len);
+    }
+
+    if (final) {
+      request->_tempFile.close();
+      Serial.printf("UPLOAD: Done. Received %i bytes in %.2fs which is %.2f kB/s.\n", index + len, (millis() - startTimer) / 1000.0, 1.0 * (index + len) / (millis() - startTimer));
+    }
+  } else {
+    request->send(404);
+  }
+}
+
+void setColour(AsyncWebServerRequest *request, uint8_t *data) {
+  Serial.println("Setting colour...");
+
+  StaticJsonDocument<256> doc;
+
+  DeserializationError error = deserializeJson(doc, (const char *)data, request->contentLength());
+
+  if (error) {
+    Serial.print("deserializeJson() failed: ");
+    Serial.println(error.c_str());
+    return;
+  }
+
+  Serial.println("Extracting colours");
+  
+  int receivedBrightness = doc["brightness"];
+  Serial.print("Brightness: "); Serial.println(receivedBrightness);
+  int receivedColour = doc["colour"];
+  Serial.print("Colour: "); Serial.println(receivedColour);
+  
+  brightness = receivedBrightness;
+  colour = receivedColour;
+
+  ws2812fx.setBrightness(brightness);
+  ws2812fx.setColor(colour);
+  ws2812fx.service();
 }
 
 void saveSettings(AsyncWebServerRequest *request, uint8_t *data) {
@@ -139,18 +213,18 @@ void saveSettings(AsyncWebServerRequest *request, uint8_t *data) {
   StaticJsonDocument<256> doc;
 
   DeserializationError error = deserializeJson(doc, (const char *)data, request->contentLength());
-  
+
   if (error) {
     Serial.print("deserializeJson() failed: ");
     Serial.println(error.c_str());
     return;
   }
-  
+
   const char* devicename = doc["devicename"]; // "Pool pump"
   deviceName = devicename;
 
   Serial.print("Device name: "); Serial.println(deviceName);
-  
+
   File settingsFile = SPIFFS.open("/settings.json", "w");
   StaticJsonDocument<1024> settingsDoc;
   settingsDoc["devicename"] = deviceName;
@@ -178,18 +252,18 @@ void loadDeviceSettings() {
     Serial.println(error.c_str());
     return;
   }
-  
+
   const char* devicename = doc["devicename"]; // "12345678901234567890123456789012"
   deviceName = devicename;
-  
+
   Serial.print("Device name: "); Serial.println(deviceName);
-  
+
   settingsFile.close();
 }
 
 String getLocalTime() {
   struct tm timeinfo;
-  if(!getLocalTime(&timeinfo)){
+  if (!getLocalTime(&timeinfo)) {
     Serial.println("Failed to obtain time");
     return "00:00";
   }
@@ -203,6 +277,16 @@ String getLocalTime() {
 
 void setup() {
   Serial.begin(115200);
+
+  ws2812fx.init();
+  ws2812fx.setBrightness(brightness);
+  ws2812fx.setSpeed(10);
+  ws2812fx.setColor(colour);
+  ws2812fx.setMode(FX_MODE_STATIC);
+  ws2812fx.start();
+
+  ws2812fx.service();
+  
   SPIFFS.begin();
 
   loadDeviceSettings();
@@ -212,15 +296,19 @@ void setup() {
 
   String dnsName = deviceName;
   dnsName.replace(" ", "");
-  if(!MDNS.begin(dnsName)) {
-     Serial.println("Error starting mDNS");
+  if (!MDNS.begin(dnsName)) {
+    Serial.println("Error starting mDNS");
   }
 
   configTime(gmtOffset_sec, 0, ntpServer);
-  
+
   server.begin();
+  Serial.println("Setup complete");
 }
 
 void loop() {
   ArduinoOTA.handle();
+  if (millis() % 100 == 0) {
+    
+  }
 }

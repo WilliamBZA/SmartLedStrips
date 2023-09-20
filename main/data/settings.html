@@ -23,7 +23,7 @@
 <body class="container">
   <nav class="navbar navbar-expand-lg bg-body-tertiary">
     <div class="container-fluid">
-      <a class="navbar-brand" href="index.html">Smart Plug</a>
+      <a class="navbar-brand" href="index.html">Smart lights</a>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
       </button>
@@ -47,37 +47,11 @@
         </div>
         
         <div class="col-auto">
-          <label for="firstRelayName" class="form-label">First relay name:</label>
-          <input type="text" id="firstRelayName" name="firstRelayName" placeholder="Name" value="" autocomplete="off"  class="form-control" required />
+          <label for="firstRelayPort" class="form-label">LED pin number:</label>
+          <input type="number" id="ledpin" name="ledpin" placeholder="LED PIN" value="" autocomplete="off"  class="form-control" onchange="checkValid()" onkeypress="checkValid()" onpaste="checkValid()" oninput="checkValid()" required />
         </div>
-        <div class="col-auto">
-          <label for="firstRelayPort" class="form-label">First relay pin number:</label>
-          <input type="number" id="firstRelayPort" name="firstRelayPort" placeholder="Relay PIN" value="" autocomplete="off"  class="form-control" onchange="checkValid()" onkeypress="checkValid()" onpaste="checkValid()" oninput="checkValid()" required />
-        </div>
-        <div class="validation-error hidden" id="firstRelayPortValidation">
+        <div class="validation-error hidden" id="ledpinValidation">
           Valid pins are: <pre>4, 13, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33</pre>
-        </div>
-        <div class="validation-error hidden duplicatepins">
-          Must have unique pins for each relay
-        </div>
-        <div class="mb-3">
-          <label><input type="checkbox" id="hasSecondRelay" /> Has second relay?</label>
-          <span id="secondRelaySettings" class="row g-3">
-            <div class="col-auto">
-              <label for="secondRelayName" class="form-label">Second relay name:</label>
-              <input type="text" id="secondRelayName" name="secondRelayName" placeholder="Name" value="" autocomplete="off"  class="form-control" />
-            </div>
-            <div class="col-auto">
-              <label for="secondRelayPort" class="form-label">Second relay pin number:</label>
-              <input type="number" id="secondRelayPort" name="secondRelayPort" placeholder="Relay PIN" value="" autocomplete="off" class="form-control" onchange="checkValid()" onkeypress="checkValid()" onpaste="checkValid()" oninput="checkValid()" />
-            </div>
-          </span>
-        </div>
-        <div class="validation-error hidden" id="secondRelayPortValidation">
-          Valid pins are: <pre>4, 13, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33</pre>
-        </div>
-        <div class="validation-error hidden duplicatepins">
-          Must have unique pins for each relay
         </div>
         <div><button id="btnSave" type="submit" disabled="disabled" class="btn btn-primary">Save settings</button></div>
         <br/>
@@ -109,17 +83,10 @@
     let currentSettings = %START_SETTINGS%;
 
     const devicename = document.getElementById("devicename");
-    const firstRelayPort = document.getElementById("firstRelayPort");
-    const firstRelayName = document.getElementById("firstRelayName");
-    const firstRelayPortValidation = document.getElementById("firstRelayPortValidation");
-
-    const hasSecondRelay = document.getElementById("hasSecondRelay");
-    const secondRelayPort = document.getElementById("secondRelayPort");
-    const secondRelayName = document.getElementById("secondRelayName");
-    const secondRelayPortValidation = document.getElementById("secondRelayPortValidation");
+    const ledpin = document.getElementById("ledpin");
 
     devicename.value = currentSettings.devicename;
-    firstRelayName.value = currentSettings.relay1Name;
+    ledpin.value = currentSettings.ledpin;
     firstRelayPort.value = currentSettings.relay1Pin;
 
     hasSecondRelay.checked = parseInt(currentSettings.hasSecondRelay);
