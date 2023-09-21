@@ -123,7 +123,8 @@ String getSettings() {
   String settings = "{\"devicename\": \"";
   settings += deviceName;
 
-  if (ssid != "") {
+  if (ssid != "") { // only send the time if connected to the internet
+
     settings += "\", \"deviceTime\": \"";
     settings += getLocalTime();
   }
@@ -154,6 +155,7 @@ void configureUrlRoutes() {
     
     ssid = "";
     wifiPassword = "";
+    deviceName = "";
 
     saveCurrentSettings();
 
@@ -356,7 +358,6 @@ void setup() {
 
     configTime(gmtOffset_sec, 0, ntpServer);
   } else {
-    
     configureCaptivePortal();
   }
 
