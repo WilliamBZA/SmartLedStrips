@@ -6,6 +6,7 @@
 #include <FS.h>
 #include <ArduinoJson.h>
 #include <AsyncJson.h>
+#include <DNSServer.h>
 #include "time.h"
 #include "Timer.h"
 
@@ -27,27 +28,59 @@ WS2812FX ws2812fx = WS2812FX(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 7200;
 
-WiFiManager wifiManager;
+DNSServer dnsServer;
 AsyncWebServer server(80);
 
 String deviceName = "UnknownDevice";
+String ssid = "";
+String wifiPassword = "";
 
 int brightness = 100;
 int colour = 0xFFFFFF;
 
-void connectToWifi() {
-  wifiManager.autoConnect("smartlights");
+bool connectToWifi() {
+  WiFi.disconnect();
+  WiFi.mode(WIFI_OFF);
 
-  Serial.println("\nConnecting to WiFi Network ..");
+  if (ssid != "") {
+    Serial.println("Using saved SSID and Password to attempt WiFi Connection.");
+    Serial.print("Saved SSID is "); Serial.println(ssid);
+    Serial.print("Saved Password is "); Serial.println(wifiPassword);
 
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
-    delay(100);
+    WiFi.mode(WIFI_STA);
+    Serial.println("\nConnecting to WiFi Network ..");
+    WiFi.begin(ssid, wifiPassword);
+
+    int attempt = 0;
+    while(WiFi.status() != WL_CONNECTED){
+      attempt++;
+      Serial.print(".");
+      delay(100);
+
+      if (attempt++ >= 200) {
+        WiFi.disconnect();
+        return false;
+      }
+    }
+
+    Serial.println("\nConnected to the WiFi network");
+    Serial.print("Local IP: ");
+    Serial.println(WiFi.localIP());
+    return true;
   }
 
-  Serial.println("\nConnected to the WiFi network");
-  Serial.print("Local IP: ");
-  Serial.println(WiFi.localIP());
+  return false;
+}
+
+void configureCaptivePortal() {
+  Serial.println("Starting captive portal");
+  
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("smart-leds");
+  Serial.print("AP IP address: ");Serial.println(WiFi.softAPIP());
+    
+  Serial.println("Starting DNS Server");
+  dnsServer.start(53, "*", WiFi.softAPIP());
 }
 
 void configureOTA() {
@@ -90,8 +123,11 @@ String getSettings() {
   String settings = "{\"devicename\": \"";
   settings += deviceName;
 
-  settings += "\", \"deviceTime\": \"";
-  settings += getLocalTime();
+  if (ssid != "") { // only send the time if connected to the internet
+
+    settings += "\", \"deviceTime\": \"";
+    settings += getLocalTime();
+  }
 
   settings += "\"}";
   return settings;
@@ -116,7 +152,12 @@ void configureUrlRoutes() {
 
   server.on("/api/resetsettings", HTTP_GET, [](AsyncWebServerRequest * request) {
     Serial.print("Resetting settings..."); Serial.println("");
-    wifiManager.resetSettings();
+    
+    ssid = "";
+    wifiPassword = "";
+    deviceName = "";
+
+    saveCurrentSettings();
 
     request->send(200, "text/json", "OK");
     delay(500);
@@ -149,7 +190,7 @@ void configureUrlRoutes() {
   server.onFileUpload(onUpload);
 
   server.onNotFound([](AsyncWebServerRequest *request) {
-    request->send(404);
+    request->beginResponse(SPIFFS, "/index.htm");
   });
 }
 
@@ -220,14 +261,26 @@ void saveSettings(AsyncWebServerRequest *request, uint8_t *data) {
     return;
   }
 
-  const char* devicename = doc["devicename"]; // "Pool pump"
+  const char* devicename = doc["devicename"];
+  const char* settingsSSID = doc["ssid"];
+  const char* settingsWifiPassword = doc["wifipassword"];
+
   deviceName = devicename;
+  ssid = settingsSSID;
+  wifiPassword = settingsWifiPassword;
 
   Serial.print("Device name: "); Serial.println(deviceName);
 
+  saveCurrentSettings();
+}
+
+void saveCurrentSettings() {
   File settingsFile = SPIFFS.open("/settings.json", "w");
   StaticJsonDocument<1024> settingsDoc;
+  
   settingsDoc["devicename"] = deviceName;
+  settingsDoc["ssid"] = ssid;
+  settingsDoc["wifipassword"] = wifiPassword;
 
   if (serializeJson(settingsDoc, settingsFile) == 0) {
     Serial.println("Failed to write to file");
@@ -253,8 +306,13 @@ void loadDeviceSettings() {
     return;
   }
 
-  const char* devicename = doc["devicename"]; // "12345678901234567890123456789012"
+  const char* devicename = doc["devicename"];
+  const char* settingsSSID = doc["ssid"];
+  const char* settingsWifiPassword = doc["wifipassword"];
+
   deviceName = devicename;
+  ssid = settingsSSID;
+  wifiPassword = settingsWifiPassword;
 
   Serial.print("Device name: "); Serial.println(deviceName);
 
@@ -290,17 +348,21 @@ void setup() {
   SPIFFS.begin();
 
   loadDeviceSettings();
-  connectToWifi();
-  configureUrlRoutes();
-  configureOTA();
 
-  String dnsName = deviceName;
-  dnsName.replace(" ", "");
-  if (!MDNS.begin(dnsName)) {
-    Serial.println("Error starting mDNS");
+  if (connectToWifi()) {
+    String dnsName = deviceName;
+    dnsName.replace(" ", "");
+    if (!MDNS.begin(dnsName)) {
+      Serial.println("Error starting mDNS");
+    }
+
+    configTime(gmtOffset_sec, 0, ntpServer);
+  } else {
+    configureCaptivePortal();
   }
 
-  configTime(gmtOffset_sec, 0, ntpServer);
+  configureUrlRoutes();
+  configureOTA();
 
   server.begin();
   Serial.println("Setup complete");
@@ -308,7 +370,5 @@ void setup() {
 
 void loop() {
   ArduinoOTA.handle();
-  if (millis() % 100 == 0) {
-    
-  }
+  dnsServer.processNextRequest();
 }
