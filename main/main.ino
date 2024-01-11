@@ -1,4 +1,3 @@
-// #include <WiFi.h>
 #include <WiFiManager.h>
 #define WEBSERVER_H
 #include <ESPAsyncWebServer.h>
@@ -11,7 +10,7 @@
 #include "Timer.h"
 
 #include <WS2812FX.h>
-#define LED_COUNT 150
+#define LED_COUNT 300
 #define LED_PIN 14
 
 #if defined(ESP8266)
@@ -34,6 +33,7 @@ AsyncWebServer server(80);
 String deviceName = "UnknownDevice";
 String ssid = "";
 String wifiPassword = "";
+bool isConnected = false;
 
 int brightness = 100;
 int colour = 0xFFFFFF;
@@ -66,6 +66,7 @@ bool connectToWifi() {
     Serial.println("\nConnected to the WiFi network");
     Serial.print("Local IP: ");
     Serial.println(WiFi.localIP());
+    isConnected = true;
     return true;
   }
 
@@ -74,9 +75,13 @@ bool connectToWifi() {
 
 void configureCaptivePortal() {
   Serial.println("Starting captive portal");
+
+  char portalSSID[23];
+  snprintf(portalSSID, 23, "smartlights-%X", ESP.getChipId());
+  Serial.print("SSID will be: "); Serial.println(portalSSID);
   
   WiFi.mode(WIFI_AP);
-  WiFi.softAP("smart-leds");
+  WiFi.softAP(portalSSID);
   Serial.print("AP IP address: ");Serial.println(WiFi.softAPIP());
     
   Serial.println("Starting DNS Server");
@@ -123,8 +128,7 @@ String getSettings() {
   String settings = "{\"devicename\": \"";
   settings += deviceName;
 
-  if (ssid != "") { // only send the time if connected to the internet
-
+  if (isConnected) { // only get the time if connected to the internet
     settings += "\", \"deviceTime\": \"";
     settings += getLocalTime();
   }
